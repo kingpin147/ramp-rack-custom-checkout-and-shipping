@@ -1,0 +1,100 @@
+//side cart body start code script code
+// This code replaces the side cart checkout button with a custom button that redirects to a new checkout page.
+// It listens for the DOM to load, replaces the button, and sets up a mutation observer
+// to handle any future changes made by Wix that might re-inject the original button.
+// This code defines a web method to create a payment using Wix Pay backend services.
+
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // 1) CSS selector for the exact side‑cart container + its Checkout button
+  const btnSelector = 'div.swz4Kl_ > button[data-hook="CheckoutButtonDataHook.button"]';
+
+  function replaceSideCartCheckout() {
+    const oldBtn = document.querySelector(btnSelector);
+    if (!oldBtn) return;                        // not on page yet
+    if (oldBtn.dataset.replaced === 'true') return;  // already swapped
+
+    // 2) build your new button
+    const newBtn = document.createElement('button');
+    newBtn.textContent = 'Checkout';  // or whatever label you like
+    newBtn.className = oldBtn.className;         // carry over styling
+    newBtn.type = 'button';
+
+    // copy all other attrs except our marker
+    Array.from(oldBtn.attributes).forEach(attr => {
+      if (!['class','type','data-replaced'].includes(attr.name)) {
+        newBtn.setAttribute(attr.name, attr.value);
+      }
+    });
+    newBtn.dataset.replaced = 'true';
+
+    // 3) wire up navigation
+    newBtn.addEventListener('click', () => {
+      window.location.href = '/checkoutnew';
+    });
+
+    // 4) swap them
+    oldBtn.replaceWith(newBtn);
+  }
+
+  // run once on load
+  replaceSideCartCheckout();
+
+  // watch for any re‑injection by Wix
+  new MutationObserver(replaceSideCartCheckout)
+    .observe(document.body, { childList: true, subtree: true });
+});
+</script>
+
+// main cart checkout button replacement script code body end
+// This code replaces the side cart checkout button with a custom button that redirects to a new checkout page.
+// It listens for the DOM to load, replaces the button, and sets up a mutation observer
+// to handle any future changes made by Wix that might re-inject the original button.
+// This code defines a web method to create a payment using Wix Pay backend services.
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  function replaceCheckoutButton() {
+    // 1) grab whatever button Wix is injecting
+    const btn = document.querySelector(
+      "button[data-wix-checkout-button='CheckoutButtonDataHook.button']"
+    );
+    if (!btn) return;
+
+    // 2) don’t re‑replace our own button
+    if (btn.dataset.replaced === 'true') return;
+
+    // 3) build the new button
+    const newBtn = document.createElement('button');
+    newBtn.textContent = 'Checkout';
+    newBtn.className = btn.className;                // keep styling
+    newBtn.setAttribute('type', 'button');
+    // copy over all other attributes except id/class/type
+    Array.from(btn.attributes).forEach(attr => {
+      if (!['class','type','data-replaced'].includes(attr.name)) {
+        newBtn.setAttribute(attr.name, attr.value);
+      }
+    });
+    // mark it so we skip it next time
+    newBtn.dataset.replaced = 'true';
+
+    // 4) wire up navigation
+    newBtn.addEventListener('click', function() {
+      window.location.href = '/checkoutnew';
+    });
+
+    // 5) swap ’em
+    btn.replaceWith(newBtn);
+  }
+
+  // run once on load
+  replaceCheckoutButton();
+
+  // watch for any DOM shenanigans and reapply if Wix rolls it back
+  const observer = new MutationObserver(replaceCheckoutButton);
+  observer.observe(document.body, { childList: true, subtree: true });
+});
+</script>
+
+
