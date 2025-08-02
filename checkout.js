@@ -1,6 +1,10 @@
 import { myGetCurrentCartFunction } from 'backend/currentCart.web';
-import { createMyPayment } from 'backend/wixPay.web'
+import { createMyOrder, updateMyOrderPaymentStatus } from 'backend/order';
+import { createMyPayment } from 'backend/wixPay.web';
+import wixEcomFrontend from "wix-ecom-frontend";
 import wixPay from "wix-pay";
+import wixData from "wix-data";
+
 const shippingFreightData = [
     { name: '6" Oval light for Xtreme and ST-100 models EACH', shipping_freight: 8.99 },
     { name: 'AA101 - Truck Rail System', shipping_freight: 24.95 },
@@ -43,6 +47,16 @@ const shippingOptions = [
 
 $w.onReady(async () => {
     $w('#orderSummary').collapse();
+    await loadCartAndBind(); // Load initially
+
+    // Listen for any changes in the cart
+    wixEcomFrontend.onCartChange(async () => {
+        console.log("Cart changed — refreshing cart items...");
+        await loadCartAndBind(); // Reload and re-render cart when it changes
+    });
+});
+
+async function loadCartAndBind() {
     await myGetCurrentCartFunction()
         .then(cart => {
             const items = cart.lineItems;
@@ -180,56 +194,127 @@ $w.onReady(async () => {
                 $w('#shipping').expand();
                 $w('#customerContainer').collapse();
             });
+
             $w('#paymentButton').onClick(async () => {
-                // Collect cart items
-                const items = cart.lineItems;
-                let sumTotal = 0;
-                const paymentItems = items.map(item => {
-                    const qty = item.quantity;
-                    const unitAmt = parseFloat(item.price.amount); // e.g. "10" → 10
-                    const lineTot = unitAmt * qty; // line total
-                    sumTotal += lineTot;
+                try {
+                    const cart = await myGetCurrentCartFunction();
+                    const items = cart.lineItems;
+                    let sumTotal = 0;
 
-                    return {
-                        name: item.productName.original,
-                        price: lineTot,
-                    };
-                });
+                    const paymentItems = items.map(item => {
+                        const qty = item.quantity;
+                        const unitAmt = parseFloat(item.price.amount);
+                        const lineTot = unitAmt * qty;
+                        sumTotal += lineTot;
 
-                // Add shipping cost to total
-                const shippingCost = parseFloat($w('#shippingDropdown').value) || 0;
-                const grandTotal = sumTotal + shippingCost;
-
-                // Add shipping cost as an additional item if needed
-                paymentItems.push({
-                    name: 'Shipping',
-                    price: shippingCost
-                });
-
-                console.log("Payment Items: ", paymentItems);
-                console.log("Grand Total: ", grandTotal);
-
-                // Call backend payment function to process the payment
-                createMyPayment({
-                        items: paymentItems,
-                        totalPrice: grandTotal, // Including shipping cost
-                    })
-                    .then(payment => {
-                        console.log("Payment Created: ", payment);
-                        // Redirect to payment gateway or process further as needed
-                        wixPay.startPayment(payment.id)
-                    })
-                    .catch(error => {
-                        console.error("Payment failed: ", error);
+                        return {
+                            name: item.productName.original,
+                            price: lineTot,
+                        };
                     });
+
+                    const shippingCost = parseFloat($w('#shippingDropdown').value) || 0;
+                    const grandTotal = sumTotal + shippingCost;
+
+                    paymentItems.push({ name: 'Shipping', price: shippingCost });
+
+                    // Step 1: Gather Order Details
+                    const recipientInfo = {
+                        address: {
+                            country: $w('#countryDropdown').value,
+                            city: $w('#cityInput').value,
+                            subdivision: $w('#stateDropdown').value,
+                            postalCode: $w('#zipInput').value,
+                            addressLine: $w('#addressInput').value,
+                        },
+                        contactDetails: {
+                            firstName: $w('#firstNameInput').value,
+                            lastName: $w('#lastNameInput').value,
+                            email: $w('#emailInput').value,
+                            phone: $w('#phoneInput').value,
+                        }
+                    };
+
+                    const channelInfo = {
+                        type: "WEB",
+                        source: "CUSTOM",
+                    };
+
+                    const buyerInfo = {
+                        email: $w('#emailInput').value,
+                        firstName: $w('#firstNameInput').value,
+                        lastName: $w('#lastNameInput').value,
+                        phone: $w('#phoneInput').value,
+                    };
+
+                    const currency = cart.currency;
+
+                    const order = {
+                        channelInfo,
+                        currency,
+                        recipientInfo,
+                        buyerInfo
+                    };
+
+                    const options = { includeChannelInfo: true };
+
+                    // Step 2: Create Order
+                    const createdOrder = await createMyOrder(order, options);
+                    console.log("Order Created:", createdOrder);
+
+                    // Step 3: Create Payment
+                    const payment = await createMyPayment({
+                        items: paymentItems,
+                        totalPrice: grandTotal
+                    });
+
+                    console.log("Payment Created:", payment);
+
+                    // Step 4: Start Wix Payment
+                    const paymentResult = await wixPay.startPayment(payment.id);
+
+                    if (paymentResult.status === "Successful") {
+                        console.log("Payment completed successfully. Updating Wix Order status...");
+
+                        await updateMyOrderPaymentStatus({
+                            orderId: createdOrder._id,
+                            paymentId: payment.id,
+                            status: "APPROVED" // Set status to APPROVED
+                        });
+
+                        console.log("Wix Order payment status updated.");
+                    } else {
+                        console.warn("Payment not successful or cancelled:", paymentResult.status);
+                    }
+
+                } catch (error) {
+                    console.error("Payment/Order process failed:", error);
+                    logErrorToDB('paymentButton.onClick', error);
+
+                }
             });
 
         })
         .catch(err => {
             console.error('Could not load cart:', err);
+            logErrorToDB('loadCartAndBind', err);
+
         });
-});
+}
 
 function normalizeName(name) {
     return name.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+async function logErrorToDB(location, error) {
+    try {
+        await wixData.insert("ErrorLogs", {
+            location,
+            message: error.message || String(error),
+            stack: error.stack || null,
+            timestamp: new Date()
+        });
+    } catch (loggingError) {
+        console.error("Failed to log error to DB:", loggingError);
+    }
 }
