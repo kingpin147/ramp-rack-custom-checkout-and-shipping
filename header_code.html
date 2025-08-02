@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
+
 // main cart checkout button replacement script code body end
 // This code replaces the side cart checkout button with a custom button that redirects to a new checkout page.
 // It listens for the DOM to load, replaces the button, and sets up a mutation observer
@@ -54,47 +55,51 @@ document.addEventListener('DOMContentLoaded', () => {
 // This code defines a web method to create a payment using Wix Pay backend services.
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
   function replaceCheckoutButton() {
-    // 1) grab whatever button Wix is injecting
     const btn = document.querySelector(
       "button[data-wix-checkout-button='CheckoutButtonDataHook.button']"
     );
-    if (!btn) return;
+    if (!btn || btn.dataset.replaced === 'true') return;
 
-    // 2) don’t re‑replace our own button
-    if (btn.dataset.replaced === 'true') return;
-
-    // 3) build the new button
     const newBtn = document.createElement('button');
     newBtn.textContent = 'Checkout';
-    newBtn.className = btn.className;                // keep styling
+    newBtn.className = btn.className;
     newBtn.setAttribute('type', 'button');
-    // copy over all other attributes except id/class/type
+
+    // Style to center the text
+    newBtn.style.display = 'flex';
+    newBtn.style.justifyContent = 'center';
+    newBtn.style.alignItems = 'center';
+    newBtn.style.textAlign = 'center';
+
+    // Copy other attributes
     Array.from(btn.attributes).forEach(attr => {
-      if (!['class','type','data-replaced'].includes(attr.name)) {
+      if (!['class', 'type', 'data-replaced'].includes(attr.name)) {
         newBtn.setAttribute(attr.name, attr.value);
       }
     });
-    // mark it so we skip it next time
+
     newBtn.dataset.replaced = 'true';
 
-    // 4) wire up navigation
-    newBtn.addEventListener('click', function() {
+    newBtn.addEventListener('click', function () {
       window.location.href = '/checkoutnew';
     });
 
-    // 5) swap ’em
     btn.replaceWith(newBtn);
   }
 
-  // run once on load
-  replaceCheckoutButton();
-
-  // watch for any DOM shenanigans and reapply if Wix rolls it back
+  // MutationObserver to catch dynamic changes
   const observer = new MutationObserver(replaceCheckoutButton);
   observer.observe(document.body, { childList: true, subtree: true });
+
+  // Fallback interval to wait for initial button
+  const interval = setInterval(() => {
+    const btn = document.querySelector("button[data-wix-checkout-button='CheckoutButtonDataHook.button']");
+    if (btn) {
+      replaceCheckoutButton();
+      clearInterval(interval);
+    }
+  }, 300);
 });
 </script>
-
-
