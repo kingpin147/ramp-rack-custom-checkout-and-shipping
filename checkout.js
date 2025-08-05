@@ -46,6 +46,22 @@ const shippingOptions = [
     { name: 'Ship to a Residential Location', cost: 495.0 },
     { name: 'Ship to a Residential Location + Liftgate Service', cost: 565.0 }
 ];
+const countryCallingCodes = {
+    "united states": "1",
+    "canada": "1",
+    "pakistan": "92",
+    "india": "91",
+    "united kingdom": "44",
+    "germany": "49",
+    "australia": "61",
+    "france": "33",
+    "saudi arabia": "966",
+    "uae": "971",
+    "china": "86",
+    "japan": "81",
+    "mexico": "52",
+    "south africa": "27",
+};
 
 $w.onReady(async () => {
     $w('#orderSummary').collapse();
@@ -118,12 +134,23 @@ async function loadCartAndBind() {
                 value: state
             }));
 
-            $w('#continueButton').onClick(() => {
+            $w('#continueButton').onClick(async () => {
+                const rawPhone = $w('#phoneInput').value;
+                const country = $w('#countryDropdown').value;
+
+                let formattedPhone;
+                try {
+                    formattedPhone = await formatPhoneWithCountryName(rawPhone, country);
+                } catch (err) {
+                    console.error("Phone formatting failed:", err.message);
+                    $w('#phoneInput').value = ""; // Optional: clear field if formatting fails
+                    return;
+                }
                 const customerDetails = {
                     email: $w('#emailInput').value,
                     firstName: $w('#firstNameInput').value,
                     lastName: $w('#lastNameInput').value,
-                    phone: $w('#phoneInput').value,
+                    phone: formattedPhone,
                 };
 
                 const deliveryDetails = {
@@ -252,15 +279,17 @@ async function loadCartAndBind() {
                     });
 
                     console.log(lineItems);
-
-                    const grandTotal = sumTotal + shippingCost;
+                    const taxRate = 0.06; // Flat 6% tax for all
+                    const taxAmount = +(sumTotal * taxRate).toFixed(2);
+                    const grandTotal = +(sumTotal + shippingCost + taxAmount).toFixed(2);
 
                     const paymentItems = [
                         ...lineItems.map(item => ({
                             name: item.productName.original,
                             price: parseFloat(item.totalPrice.amount)
                         })),
-                        { name: "Shipping", price: shippingCost }
+                        { name: "Shipping", price: shippingCost },
+                        { name: "Tax", price: taxAmount } // ✅ Add this
                     ];
 
                     const recipientInfo = {
@@ -290,7 +319,7 @@ async function loadCartAndBind() {
                         priceSummary: {
                             subtotal: { amount: sumTotal.toFixed(2), currency },
                             shipping: { amount: shippingCost.toFixed(2), currency },
-                            tax: { amount: "0.00", currency },
+                            tax: { amount: taxAmount.toFixed(2), currency }, // ✅ Tax conditionally applied
                             discount: { amount: "0.00", currency },
                             totalAdditionalFees: { amount: "0.00", currency },
                             total: { amount: grandTotal.toFixed(2), currency }
@@ -302,12 +331,12 @@ async function loadCartAndBind() {
 
                     const payment = await createMyPayment({
                         items: paymentItems,
-                        totalPrice: grandTotal
+                        totalPrice: grandTotal // ✅ Now matches sum of all item prices
                     });
 
                     const options = { includeChannelInfo: true };
                     const createdOrder = await createMyOrder(order, options);
-                    console.log("order created",createdOrder);
+                    console.log("order created", createdOrder);
 
                     const paymentResult = await wixPay.startPayment(payment.id);
 
@@ -351,4 +380,20 @@ async function logErrorToDB(location, error) {
     } catch (loggingError) {
         console.error("Failed to log error to DB:", loggingError);
     }
+}
+
+function formatPhoneWithCountryName(phone, countryName) {
+    const cleanedPhone = phone.replace(/\s|-/g, '');
+
+    if (/^\+\d{7,15}$/.test(cleanedPhone)) {
+        return cleanedPhone;
+    }
+
+    const code = countryCallingCodes[countryName?.toLowerCase()?.trim()];
+    if (!code) {
+        throw new Error(`Unsupported or unknown country: ${countryName}`);
+    }
+
+    const localNumber = cleanedPhone.replace(/^0+/, '');
+    return `+${code}${localNumber}`;
 }
